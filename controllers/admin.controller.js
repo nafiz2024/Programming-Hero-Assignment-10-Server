@@ -7,6 +7,14 @@ const bookmarksCollection = client.db().collection("bookmark");
 const reportsCollection = client.db().collection("report");
 const paymentsCollection = client.db().collection("payment");
 
+const buildActivePremiumUserQuery = () => ({
+  subscription: "premium",
+  premiumUntil: {
+    $exists: true,
+    $gt: new Date(),
+  },
+});
+
 const getAdminStats = async (req, res) => {
   try {
     const [
@@ -61,10 +69,34 @@ const getRevenue = async (req, res) => {
       return sum + Number(payment.amount || 0);
     }, 0);
 
-    const [totalTransactions, premiumUsers] = await Promise.all([
+    const premiumUserQuery = buildActivePremiumUserQuery();
+
+    const [totalTransactions, countedPremiumUsers] = await Promise.all([
       paymentsCollection.countDocuments({}),
-      usersCollection.countDocuments({ subscription: "premium" }),
+      usersCollection.countDocuments(premiumUserQuery),
     ]);
+
+    let premiumUsers = countedPremiumUsers;
+
+    if (premiumUsers === 0) {
+      const paidPremiumUserIds = await paymentsCollection
+        .aggregate([
+          {
+            $match: {
+              plan: "premium",
+              paymentStatus: "succeeded",
+            },
+          },
+          {
+            $group: {
+              _id: "$userId",
+            },
+          },
+        ])
+        .toArray();
+
+      premiumUsers = paidPremiumUserIds.length;
+    }
 
     return res.status(200).json({
       totalRevenue,
@@ -73,6 +105,7 @@ const getRevenue = async (req, res) => {
       payments,
     });
   } catch (error) {
+    console.error(error);
     return res.status(500).json({
       success: false,
       message: "Failed to fetch revenue stats",
