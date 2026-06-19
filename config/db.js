@@ -1,4 +1,4 @@
-const { MongoClient, ServerApiVersion } = require("mongodb");
+import { MongoClient, ServerApiVersion } from "mongodb";
 
 const client = new MongoClient(process.env.MONGODB_URI, {
   serverApi: {
@@ -25,4 +25,4 @@ const connectDB = async () => {
   }
 };
 
-module.exports = { connectDB, client };
+export { connectDB, client };
