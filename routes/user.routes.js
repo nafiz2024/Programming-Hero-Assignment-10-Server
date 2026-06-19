@@ -17,7 +17,7 @@ router.get("/me", verifyAuth, async (req, res) => {
 router.get("/", verifyAuth, verifyRole("admin"), async (req, res) => {
   try {
     const users = await usersCollection
-      .find(
+      .find( 
         {},
         {
           projection: {
