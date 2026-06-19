@@ -1,2 +1,5 @@
 node_modules
 .env
+*.err
+*.out
+cookies*.txt

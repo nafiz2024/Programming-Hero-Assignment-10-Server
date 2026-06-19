@@ -128,6 +128,40 @@ const getPagination = (query) => {
   };
 };
 
+const findPromptById = async (id) => {
+  return promptsCollection.findOne({ _id: id });
+};
+
+const buildAdminPromptQuery = (query) => {
+  const filters = {};
+
+  if (query.status) {
+    filters.status = query.status;
+  }
+
+  if (query.featured !== undefined) {
+    const normalized = String(query.featured).toLowerCase();
+
+    if (normalized === "true") {
+      filters.featured = true;
+    } else if (normalized === "false") {
+      filters.featured = false;
+    }
+  }
+
+  if (query.search) {
+    const searchRegex = new RegExp(query.search, "i");
+
+    filters.$or = [
+      { title: searchRegex },
+      { tags: searchRegex },
+      { aiTool: searchRegex },
+    ];
+  }
+
+  return filters;
+};
+
 const createPrompt = async (req, res) => {
   try {
     const payload = sanitizePromptInput(req.body);
@@ -200,7 +234,7 @@ const getPrompts = async (req, res) => {
 
 const getPromptById = async (req, res) => {
   try {
-    const prompt = await promptsCollection.findOne({ _id: req.params.id });
+    const prompt = await findPromptById(req.params.id);
 
     if (!prompt) {
       return res.status(404).json({
@@ -236,7 +270,7 @@ const getPromptById = async (req, res) => {
 
 const updatePrompt = async (req, res) => {
   try {
-    const prompt = await promptsCollection.findOne({ _id: req.params.id });
+    const prompt = await findPromptById(req.params.id);
 
     if (!prompt) {
       return res.status(404).json({
@@ -370,7 +404,7 @@ const updatePrompt = async (req, res) => {
       }
     );
 
-    const updatedPrompt = await promptsCollection.findOne({ _id: req.params.id });
+    const updatedPrompt = await findPromptById(req.params.id);
 
     return res.status(200).json({
       success: true,
@@ -386,7 +420,7 @@ const updatePrompt = async (req, res) => {
 
 const deletePrompt = async (req, res) => {
   try {
-    const prompt = await promptsCollection.findOne({ _id: req.params.id });
+    const prompt = await findPromptById(req.params.id);
 
     if (!prompt) {
       return res.status(404).json({
@@ -420,10 +454,210 @@ const deletePrompt = async (req, res) => {
   }
 };
 
+const approvePrompt = async (req, res) => {
+  try {
+    const prompt = await findPromptById(req.params.id);
+
+    if (!prompt) {
+      return res.status(404).json({
+        success: false,
+        message: "Prompt not found",
+      });
+    }
+
+    await promptsCollection.updateOne(
+      { _id: req.params.id },
+      {
+        $set: {
+          status: "approved",
+          rejectionFeedback: "",
+          updatedAt: new Date(),
+        },
+      }
+    );
+
+    const updatedPrompt = await findPromptById(req.params.id);
+
+    return res.status(200).json({
+      success: true,
+      message: "Prompt approved successfully",
+      prompt: updatedPrompt,
+    });
+  } catch (error) {
+    return res.status(500).json({
+      success: false,
+      message: "Failed to approve prompt",
+    });
+  }
+};
+
+const rejectPrompt = async (req, res) => {
+  try {
+    const prompt = await findPromptById(req.params.id);
+
+    if (!prompt) {
+      return res.status(404).json({
+        success: false,
+        message: "Prompt not found",
+      });
+    }
+
+    const rejectionFeedback = String(req.body.rejectionFeedback || "").trim();
+
+    if (!rejectionFeedback) {
+      return res.status(400).json({
+        success: false,
+        message: "Rejection feedback is required",
+      });
+    }
+
+    await promptsCollection.updateOne(
+      { _id: req.params.id },
+      {
+        $set: {
+          status: "rejected",
+          rejectionFeedback,
+          updatedAt: new Date(),
+        },
+      }
+    );
+
+    const updatedPrompt = await findPromptById(req.params.id);
+
+    return res.status(200).json({
+      success: true,
+      message: "Prompt rejected successfully",
+      prompt: updatedPrompt,
+    });
+  } catch (error) {
+    return res.status(500).json({
+      success: false,
+      message: "Failed to reject prompt",
+    });
+  }
+};
+
+const featurePrompt = async (req, res) => {
+  try {
+    const prompt = await findPromptById(req.params.id);
+
+    if (!prompt) {
+      return res.status(404).json({
+        success: false,
+        message: "Prompt not found",
+      });
+    }
+
+    await promptsCollection.updateOne(
+      { _id: req.params.id },
+      {
+        $set: {
+          featured: true,
+          updatedAt: new Date(),
+        },
+      }
+    );
+
+    const updatedPrompt = await findPromptById(req.params.id);
+
+    return res.status(200).json({
+      success: true,
+      message: "Prompt featured successfully",
+      prompt: updatedPrompt,
+    });
+  } catch (error) {
+    return res.status(500).json({
+      success: false,
+      message: "Failed to feature prompt",
+    });
+  }
+};
+
+const unfeaturePrompt = async (req, res) => {
+  try {
+    const prompt = await findPromptById(req.params.id);
+
+    if (!prompt) {
+      return res.status(404).json({
+        success: false,
+        message: "Prompt not found",
+      });
+    }
+
+    await promptsCollection.updateOne(
+      { _id: req.params.id },
+      {
+        $set: {
+          featured: false,
+          updatedAt: new Date(),
+        },
+      }
+    );
+
+    const updatedPrompt = await findPromptById(req.params.id);
+
+    return res.status(200).json({
+      success: true,
+      message: "Prompt unfeatured successfully",
+      prompt: updatedPrompt,
+    });
+  } catch (error) {
+    return res.status(500).json({
+      success: false,
+      message: "Failed to unfeature prompt",
+    });
+  }
+};
+
+const getPendingPrompts = async (req, res) => {
+  try {
+    const prompts = await promptsCollection
+      .find({ status: "pending" })
+      .sort({ createdAt: -1 })
+      .toArray();
+
+    return res.status(200).json({
+      success: true,
+      prompts,
+    });
+  } catch (error) {
+    return res.status(500).json({
+      success: false,
+      message: "Failed to fetch pending prompts",
+    });
+  }
+};
+
+const getAllPromptsForAdmin = async (req, res) => {
+  try {
+    const filters = buildAdminPromptQuery(req.query);
+    const prompts = await promptsCollection
+      .find(filters)
+      .sort({ createdAt: -1 })
+      .toArray();
+
+    return res.status(200).json({
+      success: true,
+      prompts,
+    });
+  } catch (error) {
+    return res.status(500).json({
+      success: false,
+      message: "Failed to fetch admin prompts",
+    });
+  }
+};
+
 export {
+  approvePrompt,
   createPrompt,
   deletePrompt,
+  featurePrompt,
+  getAllPromptsForAdmin,
   getPromptById,
+  getPendingPrompts,
   getPrompts,
+  rejectPrompt,
+  unfeaturePrompt,
   updatePrompt,
 };
