@@ -2,6 +2,7 @@ import express from "express";
 
 import {
   approvePrompt,
+  copyPrompt,
   createPrompt,
   deletePrompt,
   featurePrompt,
@@ -27,6 +28,7 @@ router.patch("/:id/reject", verifyAuth, verifyRole("admin"), rejectPrompt);
 router.patch("/:id/feature", verifyAuth, verifyRole("admin"), featurePrompt);
 router.patch("/:id/unfeature", verifyAuth, verifyRole("admin"), unfeaturePrompt);
 router.get("/:id", verifyAuthOptional, getPromptById);
+router.patch("/:id/copy", verifyAuth, copyPrompt);
 router.patch("/:id", verifyAuth, updatePrompt);
 router.delete("/:id", verifyAuth, deletePrompt);
 

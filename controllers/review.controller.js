@@ -2,8 +2,21 @@ import { promptsCollection } from "../models/prompt.model.js";
 import { createReviewDocument, reviewsCollection } from "../models/review.model.js";
 
 const normalizeId = (value) => String(value);
+const PREMIUM_REVIEW_MESSAGE = "Premium subscription required to review this prompt.";
 
 const parseRating = (value) => Number.parseInt(value, 10);
+
+const hasPremiumAccess = (user) => {
+  if (!user || user.subscription !== "premium") {
+    return false;
+  }
+
+  if (!user.premiumUntil) {
+    return true;
+  }
+
+  return new Date(user.premiumUntil) > new Date();
+};
 
 const validateReviewInput = (rating, comment) => {
   if (!Number.isInteger(rating) || rating < 1 || rating > 5) {
@@ -45,6 +58,21 @@ const upsertReview = async (req, res) => {
       return res.status(404).json({
         success: false,
         message: "Prompt not found",
+      });
+    }
+
+    const isManager =
+      req.user.role === "admin" ||
+      normalizeId(req.user.id) === normalizeId(prompt.creatorId);
+
+    if (
+      prompt.visibility === "private" &&
+      !isManager &&
+      !hasPremiumAccess(req.user)
+    ) {
+      return res.status(403).json({
+        success: false,
+        message: PREMIUM_REVIEW_MESSAGE,
       });
     }
 

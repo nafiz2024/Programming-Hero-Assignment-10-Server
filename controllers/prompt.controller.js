@@ -9,6 +9,8 @@ import {
 const DEFAULT_PAGE = 1;
 const DEFAULT_LIMIT = 10;
 const MAX_LIMIT = 50;
+const PREMIUM_LOCK_MESSAGE = "Subscribe to Premium to view this prompt.";
+const COPY_PREMIUM_MESSAGE = "Premium subscription required to copy this prompt.";
 const normalizeId = (value) => String(value);
 
 const parseTags = (value) => {
@@ -132,6 +134,39 @@ const findPromptById = async (id) => {
   return promptsCollection.findOne({ _id: id });
 };
 
+const hasPremiumAccess = (user) => {
+  if (!user || user.subscription !== "premium") {
+    return false;
+  }
+
+  if (!user.premiumUntil) {
+    return true;
+  }
+
+  return new Date(user.premiumUntil) > new Date();
+};
+
+const canManagePrompt = (user, prompt) => {
+  if (!user) {
+    return false;
+  }
+
+  return (
+    user.role === "admin" || normalizeId(user.id) === normalizeId(prompt.creatorId)
+  );
+};
+
+const buildLockedPromptResponse = (prompt) => {
+  const { content, ...promptMetadata } = prompt;
+
+  return {
+    ...promptMetadata,
+    requiresPremium: true,
+    isLocked: true,
+    message: PREMIUM_LOCK_MESSAGE,
+  };
+};
+
 const buildAdminPromptQuery = (query) => {
   const filters = {};
 
@@ -243,27 +278,111 @@ const getPromptById = async (req, res) => {
       });
     }
 
-    const canAccess =
-      (prompt.status === "approved" && prompt.visibility === "public") ||
-      (req.user &&
-        (req.user.role === "admin" ||
-          normalizeId(req.user.id) === normalizeId(prompt.creatorId)));
+    const isManager = canManagePrompt(req.user, prompt);
+    const isApprovedPublic =
+      prompt.status === "approved" && prompt.visibility === "public";
+    const isPrivatePrompt = prompt.visibility === "private";
+    const isPremiumUser = hasPremiumAccess(req.user);
 
-    if (!canAccess) {
+    if (isManager || isApprovedPublic) {
+      return res.status(200).json({
+        success: true,
+        prompt: {
+          ...prompt,
+          requiresPremium: false,
+          isLocked: false,
+        },
+      });
+    }
+
+    if (isPrivatePrompt) {
+      if (isPremiumUser) {
+        return res.status(200).json({
+          success: true,
+          prompt: {
+            ...prompt,
+            requiresPremium: false,
+            isLocked: false,
+          },
+        });
+      }
+
+      return res.status(200).json({
+        success: true,
+        prompt: buildLockedPromptResponse(prompt),
+      });
+    }
+
+    return res.status(403).json({
+      success: false,
+      message: "Forbidden",
+    });
+  } catch (error) {
+    return res.status(500).json({
+      success: false,
+      message: "Failed to fetch prompt",
+    });
+  }
+};
+
+const copyPrompt = async (req, res) => {
+  try {
+    const prompt = await findPromptById(req.params.id);
+
+    if (!prompt) {
+      return res.status(404).json({
+        success: false,
+        message: "Prompt not found",
+      });
+    }
+
+    const isManager = canManagePrompt(req.user, prompt);
+    const isApprovedPublic =
+      prompt.status === "approved" && prompt.visibility === "public";
+    const isPrivatePrompt = prompt.visibility === "private";
+    const isPremiumUser = hasPremiumAccess(req.user);
+
+    if (!isManager && !isApprovedPublic && !isPrivatePrompt) {
       return res.status(403).json({
         success: false,
         message: "Forbidden",
       });
     }
 
+    if (isPrivatePrompt && !isManager && !isPremiumUser) {
+      return res.status(403).json({
+        success: false,
+        message: COPY_PREMIUM_MESSAGE,
+      });
+    }
+
+    if (!isPrivatePrompt && !isManager && !isApprovedPublic) {
+      return res.status(403).json({
+        success: false,
+        message: "Forbidden",
+      });
+    }
+
+    await promptsCollection.updateOne(
+      { _id: req.params.id },
+      {
+        $inc: { copyCount: 1 },
+        $set: { updatedAt: new Date() },
+      }
+    );
+
+    const updatedPrompt = await findPromptById(req.params.id);
+
     return res.status(200).json({
       success: true,
-      prompt,
+      message: "Prompt copied successfully",
+      copyCount: updatedPrompt.copyCount,
+      prompt: updatedPrompt,
     });
   } catch (error) {
     return res.status(500).json({
       success: false,
-      message: "Failed to fetch prompt",
+      message: "Failed to copy prompt",
     });
   }
 };
@@ -650,6 +769,7 @@ const getAllPromptsForAdmin = async (req, res) => {
 
 export {
   approvePrompt,
+  copyPrompt,
   createPrompt,
   deletePrompt,
   featurePrompt,
