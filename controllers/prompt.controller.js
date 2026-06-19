@@ -1,0 +1,429 @@
+import {
+  PROMPT_DIFFICULTIES,
+  PROMPT_STATUSES,
+  PROMPT_VISIBILITIES,
+  createPromptDocument,
+  promptsCollection,
+} from "../models/prompt.model.js";
+
+const DEFAULT_PAGE = 1;
+const DEFAULT_LIMIT = 10;
+const MAX_LIMIT = 50;
+const normalizeId = (value) => String(value);
+
+const parseTags = (value) => {
+  if (Array.isArray(value)) {
+    return value.map((tag) => String(tag).trim()).filter(Boolean);
+  }
+
+  if (typeof value === "string") {
+    return value
+      .split(",")
+      .map((tag) => tag.trim())
+      .filter(Boolean);
+  }
+
+  return [];
+};
+
+const sanitizePromptInput = (body) => {
+  return {
+    title: String(body.title || "").trim(),
+    description: String(body.description || "").trim(),
+    content: String(body.content || "").trim(),
+    category: String(body.category || "").trim(),
+    aiTool: String(body.aiTool || "").trim(),
+    tags: parseTags(body.tags),
+    difficulty: String(body.difficulty || "").trim(),
+    thumbnail: String(body.thumbnail || "").trim(),
+    visibility: String(body.visibility || "").trim(),
+  };
+};
+
+const validatePromptPayload = (payload) => {
+  if (
+    !payload.title ||
+    !payload.description ||
+    !payload.content ||
+    !payload.category ||
+    !payload.aiTool ||
+    !payload.difficulty ||
+    !payload.visibility
+  ) {
+    return "All required prompt fields must be provided";
+  }
+
+  if (!PROMPT_DIFFICULTIES.includes(payload.difficulty)) {
+    return "Invalid difficulty";
+  }
+
+  if (!PROMPT_VISIBILITIES.includes(payload.visibility)) {
+    return "Invalid visibility";
+  }
+
+  return null;
+};
+
+const validateUpdateValue = (field, value) => {
+  if (!value) {
+    return `${field} cannot be empty`;
+  }
+
+  return null;
+};
+
+const buildPublicPromptQuery = (query) => {
+  const filters = {
+    status: "approved",
+    visibility: "public",
+  };
+
+  if (query.search) {
+    const searchRegex = new RegExp(query.search, "i");
+
+    filters.$or = [
+      { title: searchRegex },
+      { tags: searchRegex },
+      { aiTool: searchRegex },
+    ];
+  }
+
+  if (query.category) {
+    filters.category = query.category;
+  }
+
+  if (query.aiTool) {
+    filters.aiTool = query.aiTool;
+  }
+
+  if (query.difficulty) {
+    filters.difficulty = query.difficulty;
+  }
+
+  return filters;
+};
+
+const buildSortOption = (sort) => {
+  switch (sort) {
+    case "popular":
+    case "copied":
+      return { copyCount: -1, createdAt: -1 };
+    case "latest":
+    default:
+      return { createdAt: -1 };
+  }
+};
+
+const getPagination = (query) => {
+  const page = Math.max(Number.parseInt(query.page, 10) || DEFAULT_PAGE, 1);
+  const limit = Math.min(
+    Math.max(Number.parseInt(query.limit, 10) || DEFAULT_LIMIT, 1),
+    MAX_LIMIT
+  );
+
+  return {
+    page,
+    limit,
+    skip: (page - 1) * limit,
+  };
+};
+
+const createPrompt = async (req, res) => {
+  try {
+    const payload = sanitizePromptInput(req.body);
+    const validationError = validatePromptPayload(payload);
+
+    if (validationError) {
+      return res.status(400).json({
+        success: false,
+        message: validationError,
+      });
+    }
+
+    if (req.user.subscription === "free") {
+      const promptCount = await promptsCollection.countDocuments({
+        creatorId: req.user.id,
+      });
+
+      if (promptCount >= 3) {
+        return res.status(403).json({
+          success: false,
+          message: "Free users can create a maximum of 3 prompts",
+        });
+      }
+    }
+
+    const prompt = createPromptDocument(payload, req.user);
+
+    await promptsCollection.insertOne(prompt);
+
+    return res.status(201).json({
+      success: true,
+      prompt,
+    });
+  } catch (error) {
+    return res.status(500).json({
+      success: false,
+      message: "Failed to create prompt",
+    });
+  }
+};
+
+const getPrompts = async (req, res) => {
+  try {
+    const filters = buildPublicPromptQuery(req.query);
+    const { page, limit, skip } = getPagination(req.query);
+    const sort = buildSortOption(req.query.sort);
+
+    const [prompts, total] = await Promise.all([
+      promptsCollection.find(filters).sort(sort).skip(skip).limit(limit).toArray(),
+      promptsCollection.countDocuments(filters),
+    ]);
+
+    return res.status(200).json({
+      success: true,
+      prompts,
+      pagination: {
+        page,
+        limit,
+        total,
+        totalPages: Math.ceil(total / limit),
+      },
+    });
+  } catch (error) {
+    return res.status(500).json({
+      success: false,
+      message: "Failed to fetch prompts",
+    });
+  }
+};
+
+const getPromptById = async (req, res) => {
+  try {
+    const prompt = await promptsCollection.findOne({ _id: req.params.id });
+
+    if (!prompt) {
+      return res.status(404).json({
+        success: false,
+        message: "Prompt not found",
+      });
+    }
+
+    const canAccess =
+      (prompt.status === "approved" && prompt.visibility === "public") ||
+      (req.user &&
+        (req.user.role === "admin" ||
+          normalizeId(req.user.id) === normalizeId(prompt.creatorId)));
+
+    if (!canAccess) {
+      return res.status(403).json({
+        success: false,
+        message: "Forbidden",
+      });
+    }
+
+    return res.status(200).json({
+      success: true,
+      prompt,
+    });
+  } catch (error) {
+    return res.status(500).json({
+      success: false,
+      message: "Failed to fetch prompt",
+    });
+  }
+};
+
+const updatePrompt = async (req, res) => {
+  try {
+    const prompt = await promptsCollection.findOne({ _id: req.params.id });
+
+    if (!prompt) {
+      return res.status(404).json({
+        success: false,
+        message: "Prompt not found",
+      });
+    }
+
+    const isAdmin = req.user.role === "admin";
+    const isOwner =
+      normalizeId(req.user.id) === normalizeId(prompt.creatorId);
+
+    if (!isAdmin && !isOwner) {
+      return res.status(403).json({
+        success: false,
+        message: "Forbidden",
+      });
+    }
+
+    const updates = {};
+    const editableFields = [
+      "title",
+      "description",
+      "content",
+      "category",
+      "aiTool",
+      "thumbnail",
+      "visibility",
+    ];
+
+    for (const field of editableFields) {
+      if (field in req.body) {
+        const value = String(req.body[field] || "").trim();
+        const validationError = validateUpdateValue(field, value);
+
+        if (validationError) {
+          return res.status(400).json({
+            success: false,
+            message: validationError,
+          });
+        }
+
+        updates[field] = value;
+      }
+    }
+
+    if ("tags" in req.body) {
+      updates.tags = parseTags(req.body.tags);
+    }
+
+    if ("difficulty" in req.body) {
+      const difficulty = String(req.body.difficulty || "").trim();
+
+      if (!PROMPT_DIFFICULTIES.includes(difficulty)) {
+        return res.status(400).json({
+          success: false,
+          message: "Invalid difficulty",
+        });
+      }
+
+      updates.difficulty = difficulty;
+    }
+
+    if ("visibility" in req.body) {
+      const visibility = String(req.body.visibility || "").trim();
+
+      if (!PROMPT_VISIBILITIES.includes(visibility)) {
+        return res.status(400).json({
+          success: false,
+          message: "Invalid visibility",
+        });
+      }
+
+      updates.visibility = visibility;
+    }
+
+    if (isAdmin) {
+      if ("status" in req.body) {
+        const status = String(req.body.status || "").trim();
+
+        if (!PROMPT_STATUSES.includes(status)) {
+          return res.status(400).json({
+            success: false,
+            message: "Invalid status",
+          });
+        }
+
+        updates.status = status;
+      }
+
+      if ("rejectionFeedback" in req.body) {
+        updates.rejectionFeedback = String(req.body.rejectionFeedback || "").trim();
+      }
+
+      if ("featured" in req.body) {
+        updates.featured = Boolean(req.body.featured);
+      }
+
+      if ("copyCount" in req.body) {
+        const copyCount = Number.parseInt(req.body.copyCount, 10);
+
+        if (Number.isNaN(copyCount) || copyCount < 0) {
+          return res.status(400).json({
+            success: false,
+            message: "Invalid copyCount",
+          });
+        }
+
+        updates.copyCount = copyCount;
+      }
+    }
+
+    if (!Object.keys(updates).length) {
+      return res.status(400).json({
+        success: false,
+        message: "No valid fields provided for update",
+      });
+    }
+
+    if (isOwner && !isAdmin) {
+      updates.status = "pending";
+      updates.rejectionFeedback = "";
+    }
+
+    updates.updatedAt = new Date();
+
+    await promptsCollection.updateOne(
+      { _id: req.params.id },
+      {
+        $set: updates,
+      }
+    );
+
+    const updatedPrompt = await promptsCollection.findOne({ _id: req.params.id });
+
+    return res.status(200).json({
+      success: true,
+      prompt: updatedPrompt,
+    });
+  } catch (error) {
+    return res.status(500).json({
+      success: false,
+      message: "Failed to update prompt",
+    });
+  }
+};
+
+const deletePrompt = async (req, res) => {
+  try {
+    const prompt = await promptsCollection.findOne({ _id: req.params.id });
+
+    if (!prompt) {
+      return res.status(404).json({
+        success: false,
+        message: "Prompt not found",
+      });
+    }
+
+    const isAdmin = req.user.role === "admin";
+    const isOwner =
+      normalizeId(req.user.id) === normalizeId(prompt.creatorId);
+
+    if (!isAdmin && !isOwner) {
+      return res.status(403).json({
+        success: false,
+        message: "Forbidden",
+      });
+    }
+
+    await promptsCollection.deleteOne({ _id: req.params.id });
+
+    return res.status(200).json({
+      success: true,
+      message: "Prompt deleted successfully",
+    });
+  } catch (error) {
+    return res.status(500).json({
+      success: false,
+      message: "Failed to delete prompt",
+    });
+  }
+};
+
+export {
+  createPrompt,
+  deletePrompt,
+  getPromptById,
+  getPrompts,
+  updatePrompt,
+};
