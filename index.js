@@ -3,6 +3,7 @@ import "dotenv/config";
 import cors from "cors";
 import express from "express";
 
+import adminRoutes from "./routes/admin.routes.js";
 import bookmarkRoutes from "./routes/bookmark.routes.js";
 import { connectDB } from "./config/db.js";
 import authRoutes from "./routes/auth.routes.js";
@@ -32,6 +33,7 @@ app.use((req, res, next) => {
 });
 
 app.use("/api/auth", authRoutes);
+app.use("/api/admin", adminRoutes);
 app.use("/api/bookmarks", bookmarkRoutes);
 app.use("/api/payments", paymentRoutes);
 app.use("/api/prompts", promptRoutes);
