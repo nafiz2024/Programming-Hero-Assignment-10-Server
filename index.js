@@ -8,6 +8,7 @@ import { connectDB } from "./config/db.js";
 import authRoutes from "./routes/auth.routes.js";
 import paymentRoutes from "./routes/payment.routes.js";
 import promptRoutes from "./routes/prompt.routes.js";
+import reportRoutes from "./routes/report.routes.js";
 import reviewRoutes from "./routes/review.routes.js";
 import userRoutes from "./routes/user.routes.js";
 
@@ -34,6 +35,7 @@ app.use("/api/auth", authRoutes);
 app.use("/api/bookmarks", bookmarkRoutes);
 app.use("/api/payments", paymentRoutes);
 app.use("/api/prompts", promptRoutes);
+app.use("/api/reports", reportRoutes);
 app.use("/api/reviews", reviewRoutes);
 app.use("/api/users", userRoutes);
 
