@@ -105,7 +105,6 @@ const getRevenue = async (req, res) => {
       payments,
     });
   } catch (error) {
-    console.error(error);
     return res.status(500).json({
       success: false,
       message: "Failed to fetch revenue stats",

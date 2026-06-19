@@ -6,6 +6,8 @@ import express from "express";
 import adminRoutes from "./routes/admin.routes.js";
 import bookmarkRoutes from "./routes/bookmark.routes.js";
 import { connectDB } from "./config/db.js";
+import errorHandler from "./middleware/errorHandler.js";
+import notFound from "./middleware/notFound.js";
 import authRoutes from "./routes/auth.routes.js";
 import paymentRoutes from "./routes/payment.routes.js";
 import promptRoutes from "./routes/prompt.routes.js";
@@ -41,12 +43,23 @@ app.use("/api/reports", reportRoutes);
 app.use("/api/reviews", reviewRoutes);
 app.use("/api/users", userRoutes);
 
+app.get("/api/health", (req, res) => {
+  return res.status(200).json({
+    success: true,
+    status: "ok",
+    service: "PromptFlow API",
+  });
+});
+
 app.get("/", (req, res) => {
   res.json({
     success: true,
     message: "PromptFlow server running",
   });
 });
+
+app.use(notFound);
+app.use(errorHandler);
 
 const startServer = async () => {
   await connectDB();
