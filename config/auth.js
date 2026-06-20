@@ -3,6 +3,15 @@ import { mongodbAdapter } from "better-auth/adapters/mongodb";
 
 import { client } from "./db.js";
 
+const socialProviders = {};
+
+if (process.env.GOOGLE_CLIENT_ID && process.env.GOOGLE_CLIENT_SECRET) {
+  socialProviders.google = {
+    clientId: process.env.GOOGLE_CLIENT_ID,
+    clientSecret: process.env.GOOGLE_CLIENT_SECRET,
+  };
+}
+
 const auth = betterAuth({
   database: mongodbAdapter(client.db(), {
     client,
@@ -10,6 +19,7 @@ const auth = betterAuth({
   emailAndPassword: {
     enabled: true,
   },
+  socialProviders,
   user: {
     additionalFields: {
       role: {
