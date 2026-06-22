@@ -1,3 +1,5 @@
+import { ObjectId } from "mongodb";
+
 import { promptsCollection } from "../models/prompt.model.js";
 import { createReviewDocument, reviewsCollection } from "../models/review.model.js";
 
@@ -5,6 +7,16 @@ const normalizeId = (value) => String(value);
 const PREMIUM_REVIEW_MESSAGE = "Premium subscription required to review this prompt.";
 
 const parseRating = (value) => Number.parseInt(value, 10);
+const buildPromptIdCandidates = (promptId) => {
+  const normalized = normalizeId(promptId).trim();
+  const candidates = [normalized];
+
+  if (ObjectId.isValid(normalized)) {
+    candidates.push(new ObjectId(normalized));
+  }
+
+  return [...new Set(candidates)];
+};
 
 const hasPremiumAccess = (user) => {
   if (!user || user.subscription !== "premium") {
@@ -52,7 +64,9 @@ const upsertReview = async (req, res) => {
     const rating = parseRating(req.body.rating);
     const comment = String(req.body.comment || "").trim();
 
-    const prompt = await promptsCollection.findOne({ _id: promptId });
+    const prompt = await promptsCollection.findOne({
+      _id: { $in: buildPromptIdCandidates(promptId) },
+    });
 
     if (!prompt) {
       return res.status(404).json({
@@ -86,7 +100,7 @@ const upsertReview = async (req, res) => {
     }
 
     const existingReview = await reviewsCollection.findOne({
-      promptId,
+      promptId: { $in: buildPromptIdCandidates(promptId) },
       userId: req.user.id,
     });
 
@@ -135,7 +149,9 @@ const getReviewsByPrompt = async (req, res) => {
   try {
     const { promptId } = req.params;
 
-    const prompt = await promptsCollection.findOne({ _id: promptId });
+    const prompt = await promptsCollection.findOne({
+      _id: { $in: buildPromptIdCandidates(promptId) },
+    });
 
     if (!prompt) {
       return res.status(404).json({
@@ -145,7 +161,7 @@ const getReviewsByPrompt = async (req, res) => {
     }
 
     const reviews = await reviewsCollection
-      .find({ promptId })
+      .find({ promptId: { $in: buildPromptIdCandidates(promptId) } })
       .sort({ createdAt: -1 })
       .toArray();
 
@@ -174,7 +190,7 @@ const deleteReview = async (req, res) => {
         : req.user.id;
 
     const review = await reviewsCollection.findOne({
-      promptId,
+      promptId: { $in: buildPromptIdCandidates(promptId) },
       userId: targetUserId,
     });
 

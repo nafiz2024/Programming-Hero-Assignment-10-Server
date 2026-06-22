@@ -1,3 +1,5 @@
+import { ObjectId } from "mongodb";
+
 import {
   PROMPT_DIFFICULTIES,
   PROMPT_STATUSES,
@@ -12,6 +14,30 @@ const MAX_LIMIT = 50;
 const PREMIUM_LOCK_MESSAGE = "Subscribe to Premium to view this prompt.";
 const COPY_PREMIUM_MESSAGE = "Premium subscription required to copy this prompt.";
 const normalizeId = (value) => String(value);
+
+const normalizePromptDocument = (prompt) => {
+  if (!prompt) {
+    return null;
+  }
+
+  const normalizedId = normalizeId(prompt._id || prompt.id || "");
+
+  return {
+    ...prompt,
+    id: normalizedId,
+    _id: normalizedId,
+    creatorName:
+      prompt.creatorName ||
+      prompt.creator?.name ||
+      prompt.author?.name ||
+      "PromptFlow Creator",
+    creatorEmail:
+      prompt.creatorEmail ||
+      prompt.creator?.email ||
+      prompt.author?.email ||
+      "",
+  };
+};
 
 const parseTags = (value) => {
   if (Array.isArray(value)) {
@@ -130,8 +156,21 @@ const getPagination = (query) => {
   };
 };
 
+const buildPromptIdQuery = (id) => {
+  const normalized = normalizeId(id).trim();
+  const candidates = [normalized];
+
+  if (ObjectId.isValid(normalized)) {
+    candidates.push(new ObjectId(normalized));
+  }
+
+  return {
+    _id: { $in: candidates },
+  };
+};
+
 const findPromptById = async (id) => {
-  return promptsCollection.findOne({ _id: id });
+  return promptsCollection.findOne(buildPromptIdQuery(id));
 };
 
 const hasPremiumAccess = (user) => {
@@ -228,7 +267,7 @@ const createPrompt = async (req, res) => {
 
     return res.status(201).json({
       success: true,
-      prompt,
+      prompt: normalizePromptDocument(prompt),
     });
   } catch (error) {
     return res.status(500).json({
@@ -251,7 +290,7 @@ const getPrompts = async (req, res) => {
 
     return res.status(200).json({
       success: true,
-      prompts,
+      prompts: prompts.map(normalizePromptDocument),
       pagination: {
         page,
         limit,
@@ -288,7 +327,7 @@ const getPromptById = async (req, res) => {
       return res.status(200).json({
         success: true,
         prompt: {
-          ...prompt,
+          ...normalizePromptDocument(prompt),
           requiresPremium: false,
           isLocked: false,
         },
@@ -300,7 +339,7 @@ const getPromptById = async (req, res) => {
         return res.status(200).json({
           success: true,
           prompt: {
-            ...prompt,
+            ...normalizePromptDocument(prompt),
             requiresPremium: false,
             isLocked: false,
           },
@@ -309,7 +348,7 @@ const getPromptById = async (req, res) => {
 
       return res.status(200).json({
         success: true,
-        prompt: buildLockedPromptResponse(prompt),
+        prompt: normalizePromptDocument(buildLockedPromptResponse(prompt)),
       });
     }
 
@@ -364,7 +403,7 @@ const copyPrompt = async (req, res) => {
     }
 
     await promptsCollection.updateOne(
-      { _id: req.params.id },
+      buildPromptIdQuery(req.params.id),
       {
         $inc: { copyCount: 1 },
         $set: { updatedAt: new Date() },
@@ -377,7 +416,7 @@ const copyPrompt = async (req, res) => {
       success: true,
       message: "Prompt copied successfully",
       copyCount: updatedPrompt.copyCount,
-      prompt: updatedPrompt,
+      prompt: normalizePromptDocument(updatedPrompt),
     });
   } catch (error) {
     return res.status(500).json({
@@ -517,7 +556,7 @@ const updatePrompt = async (req, res) => {
     updates.updatedAt = new Date();
 
     await promptsCollection.updateOne(
-      { _id: req.params.id },
+      buildPromptIdQuery(req.params.id),
       {
         $set: updates,
       }
@@ -527,7 +566,7 @@ const updatePrompt = async (req, res) => {
 
     return res.status(200).json({
       success: true,
-      prompt: updatedPrompt,
+      prompt: normalizePromptDocument(updatedPrompt),
     });
   } catch (error) {
     return res.status(500).json({
@@ -559,7 +598,7 @@ const deletePrompt = async (req, res) => {
       });
     }
 
-    await promptsCollection.deleteOne({ _id: req.params.id });
+    await promptsCollection.deleteOne(buildPromptIdQuery(req.params.id));
 
     return res.status(200).json({
       success: true,
@@ -585,7 +624,7 @@ const approvePrompt = async (req, res) => {
     }
 
     await promptsCollection.updateOne(
-      { _id: req.params.id },
+      buildPromptIdQuery(req.params.id),
       {
         $set: {
           status: "approved",
@@ -600,7 +639,7 @@ const approvePrompt = async (req, res) => {
     return res.status(200).json({
       success: true,
       message: "Prompt approved successfully",
-      prompt: updatedPrompt,
+      prompt: normalizePromptDocument(updatedPrompt),
     });
   } catch (error) {
     return res.status(500).json({
@@ -631,7 +670,7 @@ const rejectPrompt = async (req, res) => {
     }
 
     await promptsCollection.updateOne(
-      { _id: req.params.id },
+      buildPromptIdQuery(req.params.id),
       {
         $set: {
           status: "rejected",
@@ -646,7 +685,7 @@ const rejectPrompt = async (req, res) => {
     return res.status(200).json({
       success: true,
       message: "Prompt rejected successfully",
-      prompt: updatedPrompt,
+      prompt: normalizePromptDocument(updatedPrompt),
     });
   } catch (error) {
     return res.status(500).json({
@@ -668,7 +707,7 @@ const featurePrompt = async (req, res) => {
     }
 
     await promptsCollection.updateOne(
-      { _id: req.params.id },
+      buildPromptIdQuery(req.params.id),
       {
         $set: {
           featured: true,
@@ -682,7 +721,7 @@ const featurePrompt = async (req, res) => {
     return res.status(200).json({
       success: true,
       message: "Prompt featured successfully",
-      prompt: updatedPrompt,
+      prompt: normalizePromptDocument(updatedPrompt),
     });
   } catch (error) {
     return res.status(500).json({
@@ -704,7 +743,7 @@ const unfeaturePrompt = async (req, res) => {
     }
 
     await promptsCollection.updateOne(
-      { _id: req.params.id },
+      buildPromptIdQuery(req.params.id),
       {
         $set: {
           featured: false,
@@ -718,7 +757,7 @@ const unfeaturePrompt = async (req, res) => {
     return res.status(200).json({
       success: true,
       message: "Prompt unfeatured successfully",
-      prompt: updatedPrompt,
+      prompt: normalizePromptDocument(updatedPrompt),
     });
   } catch (error) {
     return res.status(500).json({
@@ -737,7 +776,7 @@ const getPendingPrompts = async (req, res) => {
 
     return res.status(200).json({
       success: true,
-      prompts,
+      prompts: prompts.map(normalizePromptDocument),
     });
   } catch (error) {
     return res.status(500).json({
@@ -757,7 +796,7 @@ const getAllPromptsForAdmin = async (req, res) => {
 
     return res.status(200).json({
       success: true,
-      prompts,
+      prompts: prompts.map(normalizePromptDocument),
     });
   } catch (error) {
     return res.status(500).json({
