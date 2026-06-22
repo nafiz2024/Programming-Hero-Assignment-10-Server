@@ -1,8 +1,8 @@
 import express from "express";
 
 import {
-  confirmPayment,
-  createPaymentIntent,
+  createCheckoutSession,
+  finalizeCheckoutSession,
   getAllPayments,
   getMyPayments,
 } from "../controllers/payment.controller.js";
@@ -11,8 +11,8 @@ import verifyRole from "../middleware/verifyRole.js";
 
 const router = express.Router();
 
-router.post("/create-payment-intent", verifyAuth, createPaymentIntent);
-router.post("/confirm-payment", verifyAuth, confirmPayment);
+router.post("/checkout-session", verifyAuth, createCheckoutSession);
+router.post("/finalize-checkout", verifyAuth, finalizeCheckoutSession);
 router.get("/my-payments", verifyAuth, getMyPayments);
 router.get("/", verifyAuth, verifyRole("admin"), getAllPayments);
 
