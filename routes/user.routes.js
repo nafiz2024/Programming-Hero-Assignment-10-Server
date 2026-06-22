@@ -1,4 +1,5 @@
 import express from "express";
+import { ObjectId } from "mongodb";
 
 import { client } from "../config/db.js";
 import verifyAuth from "../middleware/verifyAuth.js";
@@ -6,11 +7,39 @@ import verifyRole, { ALLOWED_ROLES } from "../middleware/verifyRole.js";
 
 const router = express.Router();
 const usersCollection = client.db().collection("user");
+const normalizeId = (value) => String(value);
+const buildUserIdQuery = (id) => {
+  const normalized = normalizeId(id).trim();
+  const candidates = [normalized];
+
+  if (ObjectId.isValid(normalized)) {
+    candidates.push(new ObjectId(normalized));
+  }
+
+  return {
+    _id: {
+      $in: [...new Set(candidates)],
+    },
+  };
+};
+const normalizeUserDocument = (user) => {
+  if (!user) {
+    return null;
+  }
+
+  const normalizedId = normalizeId(user._id || user.id || "");
+
+  return {
+    ...user,
+    id: normalizedId,
+    _id: normalizedId,
+  };
+};
 
 router.get("/me", verifyAuth, async (req, res) => {
   return res.status(200).json({
     success: true,
-    user: req.user,
+    user: normalizeUserDocument(req.user),
   });
 });
 
@@ -29,7 +58,7 @@ router.get("/", verifyAuth, verifyRole("admin"), async (req, res) => {
 
     return res.status(200).json({
       success: true,
-      users,
+      users: users.map(normalizeUserDocument),
     });
   } catch (error) {
     return res.status(500).json({
@@ -51,7 +80,7 @@ router.patch("/:id/role", verifyAuth, verifyRole("admin"), async (req, res) => {
     }
 
     const result = await usersCollection.updateOne(
-      { _id: req.params.id },
+      buildUserIdQuery(req.params.id),
       {
         $set: {
           role,
@@ -68,7 +97,7 @@ router.patch("/:id/role", verifyAuth, verifyRole("admin"), async (req, res) => {
     }
 
     const updatedUser = await usersCollection.findOne(
-      { _id: req.params.id },
+      buildUserIdQuery(req.params.id),
       {
         projection: {
           password: 0,
@@ -78,7 +107,7 @@ router.patch("/:id/role", verifyAuth, verifyRole("admin"), async (req, res) => {
 
     return res.status(200).json({
       success: true,
-      user: updatedUser,
+      user: normalizeUserDocument(updatedUser),
     });
   } catch (error) {
     return res.status(500).json({
@@ -90,7 +119,7 @@ router.patch("/:id/role", verifyAuth, verifyRole("admin"), async (req, res) => {
 
 router.delete("/:id", verifyAuth, verifyRole("admin"), async (req, res) => {
   try {
-    const result = await usersCollection.deleteOne({ _id: req.params.id });
+    const result = await usersCollection.deleteOne(buildUserIdQuery(req.params.id));
 
     if (!result.deletedCount) {
       return res.status(404).json({
