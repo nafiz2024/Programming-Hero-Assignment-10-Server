@@ -227,6 +227,7 @@ async function finalizeCheckoutSession(req, res) {
     if (!existingPayment) {
       const payment = createPaymentDocument({
         userId: req.user.id,
+        userName: req.user.name || "",
         userEmail: req.user.email,
         transactionId: paymentIntentId,
         sessionId,

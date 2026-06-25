@@ -6,6 +6,7 @@ const paymentsCollection = client.db().collection("payment");
 
 const createPaymentDocument = ({
   userId,
+  userName,
   userEmail,
   transactionId,
   sessionId,
@@ -21,11 +22,14 @@ const createPaymentDocument = ({
   return {
     _id: new ObjectId().toHexString(),
     userId,
+    userName: userName || "",
     userEmail,
     transactionId,
+    paymentIntentId: transactionId,
     sessionId: sessionId || "",
     amount,
     currency,
+    status: paymentStatus,
     paymentStatus,
     paymentMethod,
     plan,

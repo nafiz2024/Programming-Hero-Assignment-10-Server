@@ -1,6 +1,7 @@
 import express from "express";
 
 import {
+  getAdminPayments,
   getAdminStats,
   getRecentActivity,
   getRevenue,
@@ -13,6 +14,7 @@ const router = express.Router();
 router.use(verifyAuth, verifyRole("admin"));
 
 router.get("/stats", getAdminStats);
+router.get("/payments", getAdminPayments);
 router.get("/revenue", getRevenue);
 router.get("/recent-activity", getRecentActivity);
 
