@@ -1,11 +1,29 @@
+import { ObjectId } from "mongodb";
+
 import { bookmarksCollection, createBookmarkDocument } from "../models/bookmark.model.js";
 import { promptsCollection } from "../models/prompt.model.js";
+
+const normalizeId = (value) => String(value || "").trim();
+
+const buildPromptIdCandidates = (promptId) => {
+  const normalized = normalizeId(promptId);
+  const candidates = [normalized];
+
+  if (ObjectId.isValid(normalized)) {
+    candidates.push(new ObjectId(normalized));
+  }
+
+  return candidates;
+};
 
 const toggleBookmark = async (req, res) => {
   try {
     const { promptId } = req.params;
+    const promptIdCandidates = buildPromptIdCandidates(promptId);
 
-    const prompt = await promptsCollection.findOne({ _id: promptId });
+    const prompt = await promptsCollection.findOne({
+      _id: { $in: promptIdCandidates },
+    });
 
     if (!prompt) {
       return res.status(404).json({
@@ -16,7 +34,7 @@ const toggleBookmark = async (req, res) => {
 
     const existingBookmark = await bookmarksCollection.findOne({
       userId: req.user.id,
-      promptId,
+      promptId: { $in: promptIdCandidates },
     });
 
     if (existingBookmark) {
@@ -29,7 +47,7 @@ const toggleBookmark = async (req, res) => {
       });
     }
 
-    const bookmark = createBookmarkDocument(req.user.id, promptId);
+    const bookmark = createBookmarkDocument(req.user.id, String(prompt._id));
 
     await bookmarksCollection.insertOne(bookmark);
 
@@ -54,7 +72,7 @@ const getBookmarks = async (req, res) => {
       .sort({ createdAt: -1 })
       .toArray();
 
-    const promptIds = bookmarks.map((bookmark) => bookmark.promptId);
+    const promptIds = bookmarks.flatMap((bookmark) => buildPromptIdCandidates(bookmark.promptId));
     const prompts = promptIds.length
       ? await promptsCollection.find({ _id: { $in: promptIds } }).toArray()
       : [];
@@ -83,10 +101,11 @@ const getBookmarks = async (req, res) => {
 const removeBookmark = async (req, res) => {
   try {
     const { promptId } = req.params;
+    const promptIdCandidates = buildPromptIdCandidates(promptId);
 
     const existingBookmark = await bookmarksCollection.findOne({
       userId: req.user.id,
-      promptId,
+      promptId: { $in: promptIdCandidates },
     });
 
     if (!existingBookmark) {

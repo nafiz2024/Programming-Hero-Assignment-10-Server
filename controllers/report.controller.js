@@ -1,3 +1,5 @@
+import { ObjectId } from "mongodb";
+
 import { promptsCollection } from "../models/prompt.model.js";
 import {
   REPORT_STATUSES,
@@ -6,14 +8,25 @@ import {
 } from "../models/report.model.js";
 
 const normalizeText = (value) => String(value || "").trim();
-const buildStringIdQuery = (id) => ({ _id: String(id || "").trim() });
+const buildIdCandidates = (id) => {
+  const normalized = normalizeText(id);
+  const candidates = [normalized];
+
+  if (ObjectId.isValid(normalized)) {
+    candidates.push(new ObjectId(normalized));
+  }
+
+  return candidates;
+};
+const buildReportIdQuery = (id) => ({ _id: normalizeText(id) });
+const buildPromptIdQuery = (id) => ({ _id: { $in: buildIdCandidates(id) } });
 
 const findReportById = async (id) => {
-  return reportsCollection.findOne(buildStringIdQuery(id));
+  return reportsCollection.findOne(buildReportIdQuery(id));
 };
 
 const findPromptById = async (id) => {
-  return promptsCollection.findOne(buildStringIdQuery(id));
+  return promptsCollection.findOne(buildPromptIdQuery(id));
 };
 
 const createReport = async (req, res) => {

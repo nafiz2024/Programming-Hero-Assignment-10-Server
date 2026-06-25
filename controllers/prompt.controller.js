@@ -100,10 +100,45 @@ const validateUpdateValue = (field, value) => {
   return null;
 };
 
+const normalizeDifficultyFilter = (value) => {
+  const normalized = String(value || "").trim().toLowerCase();
+
+  if (!normalized) {
+    return "";
+  }
+
+  if (normalized === "advanced" || normalized === "pro") {
+    return "pro";
+  }
+
+  if (normalized === "intermediate") {
+    return "intermediate";
+  }
+
+  return "beginner";
+};
+
+const normalizeVisibilityFilter = (value) => {
+  const normalized = String(value || "").trim().toLowerCase();
+
+  if (!normalized) {
+    return "";
+  }
+
+  if (normalized.includes("premium") || normalized.includes("private")) {
+    return "private";
+  }
+
+  if (normalized.includes("public")) {
+    return "public";
+  }
+
+  return "";
+};
+
 const buildPublicPromptQuery = (query) => {
   const filters = {
     status: "approved",
-    visibility: "public",
   };
 
   if (query.search) {
@@ -125,7 +160,13 @@ const buildPublicPromptQuery = (query) => {
   }
 
   if (query.difficulty) {
-    filters.difficulty = query.difficulty;
+    filters.difficulty = normalizeDifficultyFilter(query.difficulty);
+  }
+
+  const visibility = normalizeVisibilityFilter(query.visibility);
+
+  if (visibility) {
+    filters.visibility = visibility;
   }
 
   return filters;
@@ -133,6 +174,8 @@ const buildPublicPromptQuery = (query) => {
 
 const buildSortOption = (sort) => {
   switch (sort) {
+    case "rating":
+      return { averageRating: -1, rating: -1, createdAt: -1 };
     case "popular":
     case "copied":
       return { copyCount: -1, createdAt: -1 };
