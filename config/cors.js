@@ -1,8 +1,20 @@
-const allowedOrigins = [
+const defaultClientOrigins = [
   "http://localhost:3000",
   "https://programming-hero-assignment-10-clie.vercel.app",
 ];
 
-const normalizedAllowedOrigins = [...new Set(allowedOrigins)];
+function normalizeOrigin(origin) {
+  return typeof origin === "string" ? origin.trim().replace(/\/$/, "") : "";
+}
 
-export { normalizedAllowedOrigins };
+const normalizedAllowedOrigins = [...new Set([
+  ...defaultClientOrigins,
+  process.env.CLIENT_URL,
+].map(normalizeOrigin).filter(Boolean))];
+
+const trustedAuthOrigins = [...new Set([
+  ...normalizedAllowedOrigins,
+  process.env.BETTER_AUTH_URL,
+].map(normalizeOrigin).filter(Boolean))];
+
+export { normalizedAllowedOrigins, trustedAuthOrigins };

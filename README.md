@@ -30,9 +30,16 @@ Create a `.env` file based on `.env.example` and set:
 PORT=5000
 MONGODB_URI=your_connection_string
 BETTER_AUTH_SECRET=your_random_secret
+BETTER_AUTH_URL=https://programming-hero-assignment-10-serv-eta.vercel.app
+CLIENT_URL=https://programming-hero-assignment-10-clie.vercel.app
+STRIPE_SECRET_KEY=your_stripe_secret_key
+```
+
+For local development you can still use:
+
+```env
 BETTER_AUTH_URL=http://localhost:5000
 CLIENT_URL=http://localhost:3000
-STRIPE_SECRET_KEY=your_stripe_secret_key
 ```
 
 ## Installation
@@ -72,6 +79,18 @@ Authentication is handled by Better Auth and mounted under `/api/auth`.
   - `role: "user"`
   - `subscription: "free"`
   - `premiumUntil: null`
+
+### Google OAuth Production Checklist
+
+- `BETTER_AUTH_URL` must point to the live backend origin
+- `CLIENT_URL` must point to the live frontend origin
+- Better Auth cookies must be `sameSite: "none"` and `secure: true` in production
+- CORS must allow `https://programming-hero-assignment-10-clie.vercel.app` with `credentials: true`
+- Google Console Authorized JavaScript origins:
+  - `https://programming-hero-assignment-10-clie.vercel.app`
+  - `https://programming-hero-assignment-10-serv-eta.vercel.app`
+- Google Console Authorized redirect URI:
+  - `https://programming-hero-assignment-10-serv-eta.vercel.app/api/auth/callback/google`
 
 ## Premium Payment Flow
 

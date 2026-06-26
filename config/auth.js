@@ -1,7 +1,7 @@
 import { betterAuth } from "better-auth";
 import { mongodbAdapter } from "better-auth/adapters/mongodb";
 
-import { normalizedAllowedOrigins } from "./cors.js";
+import { trustedAuthOrigins } from "./cors.js";
 import { client } from "./db.js";
 
 const socialProviders = {};
@@ -59,7 +59,7 @@ const auth = betterAuth({
   },
   secret: process.env.BETTER_AUTH_SECRET,
   baseURL: process.env.BETTER_AUTH_URL,
-  trustedOrigins: normalizedAllowedOrigins,
+  trustedOrigins: trustedAuthOrigins,
   advanced: {
     defaultCookieAttributes: {
       sameSite: isSecureAuth ? "none" : "lax",
