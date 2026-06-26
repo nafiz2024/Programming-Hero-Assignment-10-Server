@@ -103,8 +103,9 @@ async function createCheckoutSession(req, res) {
 
     const billingEmail = String(req.body?.billingEmail || req.user.email || "").trim();
     const billingName = String(req.body?.billingName || req.user.name || "").trim();
-    const successUrl = `${getClientUrl()}/premium?payment=success&session_id={CHECKOUT_SESSION_ID}`;
-    const cancelUrl = `${getClientUrl()}/payment?payment=cancelled`;
+    const clientUrl = getClientUrl();
+    const successUrl = `${clientUrl}/premium?payment=success&session_id={CHECKOUT_SESSION_ID}`;
+    const cancelUrl = `${clientUrl}/premium?payment=cancelled`;
 
     logPaymentEvent("create-checkout-session:start", {
       userId: req.user.id,
