@@ -212,6 +212,11 @@ const buildPromptIdQuery = (id) => {
   };
 };
 
+const isPremiumVisibility = (visibility) => {
+  const normalized = String(visibility || "").trim().toLowerCase();
+  return normalized === "private" || normalized === "premium";
+};
+
 const findPromptById = async (id) => {
   return promptsCollection.findOne(buildPromptIdQuery(id));
 };
@@ -245,6 +250,7 @@ const buildLockedPromptResponse = (prompt) => {
     ...promptMetadata,
     requiresPremium: true,
     isLocked: true,
+    lockedReason: "premium_required",
     message: PREMIUM_LOCK_MESSAGE,
   };
 };
@@ -363,7 +369,7 @@ const getPromptById = async (req, res) => {
     const isManager = canManagePrompt(req.user, prompt);
     const isApprovedPublic =
       prompt.status === "approved" && prompt.visibility === "public";
-    const isPrivatePrompt = prompt.visibility === "private";
+    const isPrivatePrompt = isPremiumVisibility(prompt.visibility);
     const isPremiumUser = hasPremiumAccess(req.user);
 
     if (isManager || isApprovedPublic) {
@@ -373,6 +379,7 @@ const getPromptById = async (req, res) => {
           ...normalizePromptDocument(prompt),
           requiresPremium: false,
           isLocked: false,
+          lockedReason: "",
         },
       });
     }
@@ -385,6 +392,7 @@ const getPromptById = async (req, res) => {
             ...normalizePromptDocument(prompt),
             requiresPremium: false,
             isLocked: false,
+            lockedReason: "",
           },
         });
       }
@@ -421,7 +429,7 @@ const copyPrompt = async (req, res) => {
     const isManager = canManagePrompt(req.user, prompt);
     const isApprovedPublic =
       prompt.status === "approved" && prompt.visibility === "public";
-    const isPrivatePrompt = prompt.visibility === "private";
+    const isPrivatePrompt = isPremiumVisibility(prompt.visibility);
     const isPremiumUser = hasPremiumAccess(req.user);
 
     if (!isManager && !isApprovedPublic && !isPrivatePrompt) {
