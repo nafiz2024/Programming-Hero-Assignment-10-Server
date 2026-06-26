@@ -64,6 +64,7 @@ const auth = betterAuth({
     defaultCookieAttributes: {
       sameSite: isSecureAuth ? "none" : "lax",
       secure: isSecureAuth,
+      httpOnly: true,
     },
   },
 });

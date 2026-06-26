@@ -1,6 +1,9 @@
 import { client } from "../config/db.js";
 
-const SESSION_COOKIE_NAME = "better-auth.session_token";
+const SESSION_COOKIE_NAMES = [
+  "__Secure-better-auth.session_token",
+  "better-auth.session_token",
+];
 const normalizeId = (value) => String(value);
 
 const parseCookies = (cookieHeader = "") => {
@@ -18,7 +21,7 @@ const parseCookies = (cookieHeader = "") => {
 
 const authenticateRequest = async (req) => {
   const cookies = parseCookies(req.headers.cookie);
-  const signedSessionToken = cookies[SESSION_COOKIE_NAME];
+  const signedSessionToken = SESSION_COOKIE_NAMES.map((name) => cookies[name]).find(Boolean);
 
   if (!signedSessionToken) {
     return null;
