@@ -119,7 +119,6 @@ async function createCheckoutSession(req, res) {
     console.log("========== STRIPE DEBUG ==========");
     console.log("Frontend successUrl:", req.body.successUrl);
     console.log("Final successUrl:", successUrl);
-    console.log("Final Stripe successUrl:", successUrl);
     console.log("Final cancelUrl:", cancelUrl);
     console.log("Stripe session config:");
     console.log({
@@ -127,6 +126,7 @@ async function createCheckoutSession(req, res) {
       cancel_url: cancelUrl,
     });
     console.log("==================================");
+    console.log("FINAL STRIPE SUCCESS URL:", successUrl);
 
     const session = await stripe.checkout.sessions.create({
       mode: "payment",
