@@ -9,6 +9,7 @@ const PAYMENT_AMOUNT = 5;
 const PAYMENT_AMOUNT_CENTS = 500;
 const PAYMENT_CURRENCY = "usd";
 const PAYMENT_METHOD = "stripe_checkout";
+const PREMIUM_DURATION_MS = 365 * 24 * 60 * 60 * 1000;
 
 function buildUserIdFilter(userOrId) {
   const rawId =
@@ -52,10 +53,17 @@ function logPaymentError(step, error, details = {}) {
   });
 }
 
-async function activatePremiumForUser(user) {
-  const premiumUntil = new Date(Date.now() + 30 * 24 * 60 * 60 * 1000);
+async function getUserForResponse(user) {
+  return usersCollection.findOne(buildUserIdFilter(user), {
+    projection: {
+      password: 0,
+    },
+  });
+}
 
-  await usersCollection.updateOne(
+async function activatePremiumForUser(user) {
+  const premiumUntil = new Date(Date.now() + PREMIUM_DURATION_MS);
+  const updateResult = await usersCollection.updateOne(
     buildUserIdFilter(user),
     {
       $set: {
@@ -66,7 +74,20 @@ async function activatePremiumForUser(user) {
     }
   );
 
-  return premiumUntil;
+  const updatedUser = await getUserForResponse(user);
+
+  logPaymentEvent("premium-updated", {
+    userId: user?.id || user?._id,
+    userEmail: user?.email || updatedUser?.email || "",
+    matchedCount: updateResult.matchedCount,
+    modifiedCount: updateResult.modifiedCount,
+    premiumUntil,
+  });
+
+  return {
+    premiumUntil,
+    updatedUser,
+  };
 }
 
 async function createCheckoutSession(req, res) {
@@ -159,7 +180,7 @@ async function finalizeCheckoutSession(req, res) {
       });
     }
 
-    const sessionId = String(req.body?.sessionId || "").trim();
+    const sessionId = String(req.body?.session_id || req.body?.sessionId || "").trim();
 
     if (!sessionId) {
       return res.status(400).json({
@@ -170,11 +191,20 @@ async function finalizeCheckoutSession(req, res) {
 
     logPaymentEvent("finalize-checkout:start", {
       userId: req.user.id,
+      userEmail: req.user.email,
       sessionId,
     });
 
     const session = await stripe.checkout.sessions.retrieve(sessionId, {
       expand: ["payment_intent"],
+    });
+
+    logPaymentEvent("finalize-checkout:session-retrieved", {
+      userId: req.user.id,
+      userEmail: req.user.email,
+      sessionId,
+      paymentStatus: session.payment_status,
+      stripeCustomerEmail: session.customer_details?.email || session.customer_email || "",
     });
 
     if (String(session.client_reference_id || "") !== String(req.user.id)) {
@@ -211,6 +241,9 @@ async function finalizeCheckoutSession(req, res) {
       buildUserIdFilter(req.user),
       {
         projection: {
+          password: 0,
+          email: 1,
+          name: 1,
           subscription: 1,
           premiumUntil: 1,
         },
@@ -220,12 +253,12 @@ async function finalizeCheckoutSession(req, res) {
       !existingPayment ||
       currentUser?.subscription !== PREMIUM_PLAN ||
       !currentUser?.premiumUntil;
-    const premiumUntil = needsActivation
-      ? await activatePremiumForUser(req.user)
-      : new Date(currentUser.premiumUntil);
+    let payment = existingPayment;
+    let updatedUser = currentUser;
+    let premiumUntil = currentUser?.premiumUntil ? new Date(currentUser.premiumUntil) : null;
 
     if (!existingPayment) {
-      const payment = createPaymentDocument({
+      payment = createPaymentDocument({
         userId: req.user.id,
         userName: req.user.name || "",
         userEmail: req.user.email,
@@ -239,14 +272,40 @@ async function finalizeCheckoutSession(req, res) {
         paidAt: new Date((session.created || Math.floor(Date.now() / 1000)) * 1000),
       });
 
-      await paymentsCollection.insertOne(payment);
+      const insertResult = await paymentsCollection.insertOne(payment);
+
+      logPaymentEvent("payment-created", {
+        userId: req.user.id,
+        userEmail: req.user.email,
+        sessionId,
+        transactionId: paymentIntentId,
+        insertedId: insertResult.insertedId,
+      });
+    } else {
+      logPaymentEvent("payment-existing", {
+        userId: req.user.id,
+        userEmail: req.user.email,
+        sessionId,
+        transactionId: paymentIntentId,
+        paymentId: existingPayment._id,
+      });
+    }
+
+    if (needsActivation) {
+      const premiumActivation = await activatePremiumForUser(req.user);
+      premiumUntil = premiumActivation.premiumUntil;
+      updatedUser = premiumActivation.updatedUser;
+    } else {
+      updatedUser = await getUserForResponse(req.user);
     }
 
     logPaymentEvent("finalize-checkout:success", {
       userId: req.user.id,
+      userEmail: req.user.email,
       sessionId,
       transactionId: paymentIntentId,
       reusedExistingPayment: Boolean(existingPayment),
+      premiumUntil,
     });
 
     return res.status(existingPayment ? 200 : 201).json({
@@ -256,6 +315,14 @@ async function finalizeCheckoutSession(req, res) {
       sessionId,
       subscription: PREMIUM_PLAN,
       premiumUntil,
+      user: updatedUser
+        ? {
+            ...updatedUser,
+            id: String(updatedUser._id || updatedUser.id || req.user.id),
+            _id: String(updatedUser._id || updatedUser.id || req.user.id),
+          }
+        : null,
+      payment,
     });
   } catch (error) {
     logPaymentError("finalize-checkout:failed", error, {
