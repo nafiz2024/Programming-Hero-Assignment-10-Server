@@ -37,59 +37,6 @@ function getClientUrl() {
   return (process.env.CLIENT_URL || "http://localhost:3000").replace(/\/$/, "");
 }
 
-function buildQueryString(params = {}, rawKeys = []) {
-  return Object.entries(params)
-    .filter(([, value]) => value !== undefined && value !== null && value !== "")
-    .map(([key, value]) => {
-      const serializedValue = String(value);
-
-      if (rawKeys.includes(key)) {
-        return `${encodeURIComponent(key)}=${serializedValue}`;
-      }
-
-      return `${encodeURIComponent(key)}=${encodeURIComponent(serializedValue)}`;
-    })
-    .join("&");
-}
-
-function normalizeCheckoutUrl(candidateUrl, fallbackPathname, requiredParams = {}, options = {}) {
-  const clientUrl = getClientUrl();
-  const rawQueryKeys = options.rawQueryKeys || [];
-  const fallbackUrl = new URL(fallbackPathname, `${clientUrl}/`);
-  fallbackUrl.search = buildQueryString(requiredParams, rawQueryKeys);
-
-  if (!candidateUrl) {
-    return fallbackUrl.toString();
-  }
-
-  try {
-    const parsedUrl = new URL(String(candidateUrl), `${clientUrl}/`);
-    const parsedClientUrl = new URL(clientUrl);
-
-    if (parsedUrl.origin !== parsedClientUrl.origin) {
-      return fallbackUrl.toString();
-    }
-
-    const currentParams = {};
-
-    for (const [key, value] of parsedUrl.searchParams.entries()) {
-      currentParams[key] = value;
-    }
-
-    parsedUrl.search = buildQueryString(
-      {
-        ...currentParams,
-        ...requiredParams,
-      },
-      rawQueryKeys
-    );
-
-    return parsedUrl.toString();
-  } catch {
-    return fallbackUrl.toString();
-  }
-}
-
 function logPaymentEvent(step, details = {}) {
   console.info(`[payments] ${step}`, details);
 }
@@ -156,15 +103,8 @@ async function createCheckoutSession(req, res) {
 
     const billingEmail = String(req.body?.billingEmail || req.user.email || "").trim();
     const billingName = String(req.body?.billingName || req.user.name || "").trim();
-    const successUrl = normalizeCheckoutUrl(req.body?.successUrl, "/premium", {
-      payment: "success",
-      session_id: "{CHECKOUT_SESSION_ID}",
-    }, {
-      rawQueryKeys: ["session_id"],
-    });
-    const cancelUrl = normalizeCheckoutUrl(req.body?.cancelUrl, "/payment", {
-      payment: "cancelled",
-    });
+    const successUrl = `${getClientUrl()}/premium?payment=success&session_id={CHECKOUT_SESSION_ID}`;
+    const cancelUrl = `${getClientUrl()}/payment?payment=cancelled`;
 
     logPaymentEvent("create-checkout-session:start", {
       userId: req.user.id,
@@ -178,6 +118,7 @@ async function createCheckoutSession(req, res) {
     console.log("========== STRIPE DEBUG ==========");
     console.log("Frontend successUrl:", req.body.successUrl);
     console.log("Final successUrl:", successUrl);
+    console.log("Final Stripe successUrl:", successUrl);
     console.log("Final cancelUrl:", cancelUrl);
     console.log("Stripe session config:");
     console.log({
