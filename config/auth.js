@@ -1,9 +1,11 @@
 import { betterAuth } from "better-auth";
 import { mongodbAdapter } from "better-auth/adapters/mongodb";
 
+import { normalizedAllowedOrigins } from "./cors.js";
 import { client } from "./db.js";
 
 const socialProviders = {};
+const isSecureAuth = process.env.BETTER_AUTH_URL?.startsWith("https://");
 
 if (process.env.GOOGLE_CLIENT_ID && process.env.GOOGLE_CLIENT_SECRET) {
   socialProviders.google = {
@@ -57,7 +59,13 @@ const auth = betterAuth({
   },
   secret: process.env.BETTER_AUTH_SECRET,
   baseURL: process.env.BETTER_AUTH_URL,
-  trustedOrigins: [process.env.CLIENT_URL],
+  trustedOrigins: normalizedAllowedOrigins,
+  advanced: {
+    defaultCookieAttributes: {
+      sameSite: isSecureAuth ? "none" : "lax",
+      secure: isSecureAuth,
+    },
+  },
 });
 
 export { auth };

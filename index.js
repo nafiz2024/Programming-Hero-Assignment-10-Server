@@ -6,6 +6,7 @@ import express from "express";
 import adminRoutes from "./routes/admin.routes.js";
 import bookmarkRoutes from "./routes/bookmark.routes.js";
 import { connectDB } from "./config/db.js";
+import { normalizedAllowedOrigins } from "./config/cors.js";
 import errorHandler from "./middleware/errorHandler.js";
 import notFound from "./middleware/notFound.js";
 import authRoutes from "./routes/auth.routes.js";
@@ -18,13 +19,14 @@ import userRoutes from "./routes/user.routes.js";
 const app = express();
 const PORT = process.env.PORT || 5000;
 const jsonMiddleware = express.json();
+const corsOptions = {
+  origin: normalizedAllowedOrigins,
+  credentials: true,
+  methods: ["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
+  allowedHeaders: ["Content-Type", "Authorization"],
+};
 
-app.use(
-  cors({
-    origin: process.env.CLIENT_URL || true,
-    credentials: true,
-  })
-);
+app.use(cors(corsOptions));
 
 app.use((req, res, next) => {
   if (req.path.startsWith("/api/auth")) {
