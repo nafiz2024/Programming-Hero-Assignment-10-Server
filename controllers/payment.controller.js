@@ -56,7 +56,12 @@ function logPaymentError(step, error, details = {}) {
 async function getUserForResponse(user) {
   return usersCollection.findOne(buildUserIdFilter(user), {
     projection: {
-      password: 0,
+      name: 1,
+      email: 1,
+      role: 1,
+      subscription: 1,
+      premiumUntil: 1,
+      image: 1,
     },
   });
 }
@@ -257,11 +262,12 @@ async function finalizeCheckoutSession(req, res) {
       buildUserIdFilter(req.user),
       {
         projection: {
-          password: 0,
           email: 1,
           name: 1,
+          role: 1,
           subscription: 1,
           premiumUntil: 1,
+          image: 1,
         },
       }
     );
