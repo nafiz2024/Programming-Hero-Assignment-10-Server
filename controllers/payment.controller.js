@@ -37,13 +37,26 @@ function getClientUrl() {
   return (process.env.CLIENT_URL || "http://localhost:3000").replace(/\/$/, "");
 }
 
-function normalizeCheckoutUrl(candidateUrl, fallbackPathname, requiredParams = {}) {
-  const clientUrl = getClientUrl();
-  const fallbackUrl = new URL(fallbackPathname, `${clientUrl}/`);
+function buildQueryString(params = {}, rawKeys = []) {
+  return Object.entries(params)
+    .filter(([, value]) => value !== undefined && value !== null && value !== "")
+    .map(([key, value]) => {
+      const serializedValue = String(value);
 
-  for (const [key, value] of Object.entries(requiredParams)) {
-    fallbackUrl.searchParams.set(key, value);
-  }
+      if (rawKeys.includes(key)) {
+        return `${encodeURIComponent(key)}=${serializedValue}`;
+      }
+
+      return `${encodeURIComponent(key)}=${encodeURIComponent(serializedValue)}`;
+    })
+    .join("&");
+}
+
+function normalizeCheckoutUrl(candidateUrl, fallbackPathname, requiredParams = {}, options = {}) {
+  const clientUrl = getClientUrl();
+  const rawQueryKeys = options.rawQueryKeys || [];
+  const fallbackUrl = new URL(fallbackPathname, `${clientUrl}/`);
+  fallbackUrl.search = buildQueryString(requiredParams, rawQueryKeys);
 
   if (!candidateUrl) {
     return fallbackUrl.toString();
@@ -57,9 +70,19 @@ function normalizeCheckoutUrl(candidateUrl, fallbackPathname, requiredParams = {
       return fallbackUrl.toString();
     }
 
-    for (const [key, value] of Object.entries(requiredParams)) {
-      parsedUrl.searchParams.set(key, value);
+    const currentParams = {};
+
+    for (const [key, value] of parsedUrl.searchParams.entries()) {
+      currentParams[key] = value;
     }
+
+    parsedUrl.search = buildQueryString(
+      {
+        ...currentParams,
+        ...requiredParams,
+      },
+      rawQueryKeys
+    );
 
     return parsedUrl.toString();
   } catch {
@@ -136,6 +159,8 @@ async function createCheckoutSession(req, res) {
     const successUrl = normalizeCheckoutUrl(req.body?.successUrl, "/premium", {
       payment: "success",
       session_id: "{CHECKOUT_SESSION_ID}",
+    }, {
+      rawQueryKeys: ["session_id"],
     });
     const cancelUrl = normalizeCheckoutUrl(req.body?.cancelUrl, "/payment", {
       payment: "cancelled",
