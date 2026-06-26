@@ -37,6 +37,36 @@ function getClientUrl() {
   return (process.env.CLIENT_URL || "http://localhost:3000").replace(/\/$/, "");
 }
 
+function normalizeCheckoutUrl(candidateUrl, fallbackPathname, requiredParams = {}) {
+  const clientUrl = getClientUrl();
+  const fallbackUrl = new URL(fallbackPathname, `${clientUrl}/`);
+
+  for (const [key, value] of Object.entries(requiredParams)) {
+    fallbackUrl.searchParams.set(key, value);
+  }
+
+  if (!candidateUrl) {
+    return fallbackUrl.toString();
+  }
+
+  try {
+    const parsedUrl = new URL(String(candidateUrl), `${clientUrl}/`);
+    const parsedClientUrl = new URL(clientUrl);
+
+    if (parsedUrl.origin !== parsedClientUrl.origin) {
+      return fallbackUrl.toString();
+    }
+
+    for (const [key, value] of Object.entries(requiredParams)) {
+      parsedUrl.searchParams.set(key, value);
+    }
+
+    return parsedUrl.toString();
+  } catch {
+    return fallbackUrl.toString();
+  }
+}
+
 function logPaymentEvent(step, details = {}) {
   console.info(`[payments] ${step}`, details);
 }
@@ -103,13 +133,21 @@ async function createCheckoutSession(req, res) {
 
     const billingEmail = String(req.body?.billingEmail || req.user.email || "").trim();
     const billingName = String(req.body?.billingName || req.user.name || "").trim();
-    const successUrl = `${getClientUrl()}/premium?payment=success&session_id={CHECKOUT_SESSION_ID}`;
-    const cancelUrl = `${getClientUrl()}/payment?payment=cancelled`;
+    const successUrl = normalizeCheckoutUrl(req.body?.successUrl, "/premium", {
+      payment: "success",
+      session_id: "{CHECKOUT_SESSION_ID}",
+    });
+    const cancelUrl = normalizeCheckoutUrl(req.body?.cancelUrl, "/payment", {
+      payment: "cancelled",
+    });
 
     logPaymentEvent("create-checkout-session:start", {
       userId: req.user.id,
+      userEmail: req.user.email,
       billingEmail,
       hasBillingName: Boolean(billingName),
+      successUrl,
+      cancelUrl,
     });
 
     const session = await stripe.checkout.sessions.create({
