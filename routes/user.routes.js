@@ -2,6 +2,7 @@ import express from "express";
 import { ObjectId } from "mongodb";
 
 import { client } from "../config/db.js";
+import { authenticateRequest } from "../middleware/verifyAuth.js";
 import verifyAuth from "../middleware/verifyAuth.js";
 import verifyRole, { ALLOWED_ROLES } from "../middleware/verifyRole.js";
 
@@ -36,17 +37,46 @@ const normalizeUserDocument = (user) => {
   };
 };
 
-router.get("/me", verifyAuth, async (req, res) => {
-  return res.status(200).json({
-    success: true,
-    user: normalizeUserDocument(req.user),
-  });
+router.get("/me", async (req, res) => {
+  try {
+    const authData = await authenticateRequest(req);
+    const hasCookie = Boolean(req.headers.cookie?.trim());
+
+    console.log("[GET /api/users/me]", {
+      hasCookie,
+      sessionUserId: authData?.user?.id || null,
+      sessionUserEmail: authData?.user?.email || null,
+      returnedUserRole: authData?.user?.role || null,
+    });
+
+    if (!authData?.user) {
+      return res.status(401).json({
+        success: false,
+        message: "Unauthorized",
+      });
+    }
+
+    req.session = authData.session;
+    req.user = authData.user;
+
+    return res.status(200).json({
+      success: true,
+      user: normalizeUserDocument(req.user),
+    });
+  } catch (error) {
+    console.error("[GET /api/users/me] failed to verify session cookie", error);
+
+    return res.status(401).json({
+      success: false,
+      message: "Unauthorized",
+    });
+  }
 });
 
 router.get("/", verifyAuth, verifyRole("admin"), async (req, res) => {
   try {
     const users = await usersCollection
-      .find( 
+      .find(
         {},
         {
           projection: {
