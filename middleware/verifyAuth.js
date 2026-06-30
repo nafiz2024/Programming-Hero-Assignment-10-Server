@@ -171,19 +171,31 @@ const authenticateRequest = async (req) => {
   return normalizeAuthResult(session, user);
 };
 
+const loadAuthenticatedRequest = async (req, res) => {
+  const authData = await authenticateRequest(req);
+
+  if (!authData?.user) {
+    res.status(401).json({
+      success: false,
+      message: "Unauthorized",
+    });
+
+    return null;
+  }
+
+  req.session = authData.session;
+  req.user = authData.user;
+
+  return authData;
+};
+
 const verifyAuth = async (req, res, next) => {
   try {
-    const authData = await authenticateRequest(req);
+    const authData = await loadAuthenticatedRequest(req, res);
 
     if (!authData) {
-      return res.status(401).json({
-        success: false,
-        message: "Unauthorized",
-      });
+      return;
     }
-
-    req.session = authData.session;
-    req.user = authData.user;
 
     next();
   } catch (error) {
@@ -194,5 +206,29 @@ const verifyAuth = async (req, res, next) => {
   }
 };
 
-export { authenticateRequest };
+const verifyAdminAuth = async (req, res, next) => {
+  try {
+    const authData = await loadAuthenticatedRequest(req, res);
+
+    if (!authData) {
+      return;
+    }
+
+    if (req.user.role !== "admin") {
+      return res.status(403).json({
+        success: false,
+        message: "Forbidden",
+      });
+    }
+
+    return next();
+  } catch (error) {
+    return res.status(401).json({
+      success: false,
+      message: "Unauthorized",
+    });
+  }
+};
+
+export { authenticateRequest, loadAuthenticatedRequest, verifyAdminAuth };
 export default verifyAuth;
