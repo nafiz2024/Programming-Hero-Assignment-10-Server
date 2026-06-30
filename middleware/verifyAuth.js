@@ -1,11 +1,10 @@
 import { client } from "../config/db.js";
+import { getUserId, normalizeId } from "../utils/identity.js";
 
 const SESSION_COOKIE_NAMES = [
   "__Secure-better-auth.session_token",
   "better-auth.session_token",
 ];
-const normalizeId = (value) => String(value);
-
 const parseCookies = (cookieHeader = "") => {
   return cookieHeader.split(";").reduce((cookies, cookie) => {
     const [name, ...valueParts] = cookie.trim().split("=");
@@ -52,7 +51,8 @@ const authenticateRequest = async (req) => {
     },
     user: {
       ...user,
-      id: normalizeId(user._id),
+      id: getUserId(user),
+      _id: normalizeId(user._id),
     },
   };
 };

@@ -1,6 +1,7 @@
 import { ObjectId } from "mongodb";
 
 import { client } from "../config/db.js";
+import { getUserId } from "../utils/identity.js";
 
 const PROMPT_DIFFICULTIES = ["beginner", "intermediate", "pro"];
 const PROMPT_VISIBILITIES = ["public", "private"];
@@ -9,6 +10,8 @@ const PROMPT_STATUSES = ["pending", "approved", "rejected"];
 const promptsCollection = client.db().collection("prompt");
 
 const createPromptDocument = (data, user) => {
+  const creatorId = getUserId(user);
+
   return {
     _id: new ObjectId().toHexString(),
     title: data.title,
@@ -22,9 +25,9 @@ const createPromptDocument = (data, user) => {
     visibility: data.visibility,
     status: "pending",
     rejectionFeedback: "",
-    creatorId: user.id,
-    creatorName: user.name,
-    creatorEmail: user.email,
+    creatorId,
+    creatorName: String(user?.name || "").trim(),
+    creatorEmail: String(user?.email || "").trim(),
     copyCount: 0,
     featured: false,
     createdAt: new Date(),

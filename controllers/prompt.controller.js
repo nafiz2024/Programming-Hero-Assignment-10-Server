@@ -7,14 +7,13 @@ import {
   createPromptDocument,
   promptsCollection,
 } from "../models/prompt.model.js";
+import { getUserId, normalizeId } from "../utils/identity.js";
 
 const DEFAULT_PAGE = 1;
 const DEFAULT_LIMIT = 10;
 const MAX_LIMIT = 50;
 const PREMIUM_LOCK_MESSAGE = "Subscribe to Premium to view this prompt.";
 const COPY_PREMIUM_MESSAGE = "Premium subscription required to copy this prompt.";
-const normalizeId = (value) => String(value);
-
 const normalizePromptDocument = (prompt) => {
   if (!prompt) {
     return null;
@@ -26,6 +25,7 @@ const normalizePromptDocument = (prompt) => {
     ...prompt,
     id: normalizedId,
     _id: normalizedId,
+    creatorId: normalizeId(prompt.creatorId || prompt.creator?._id || prompt.creator?.id || ""),
     creatorName:
       prompt.creatorName ||
       prompt.creator?.name ||
@@ -36,6 +36,9 @@ const normalizePromptDocument = (prompt) => {
       prompt.creator?.email ||
       prompt.author?.email ||
       "",
+    status: prompt.status || "pending",
+    copyCount: Number(prompt.copyCount || 0),
+    featured: Boolean(prompt.featured),
   };
 };
 
@@ -172,6 +175,22 @@ const buildPublicPromptQuery = (query) => {
   return filters;
 };
 
+const buildCreatorIdFilter = (user) => {
+  const candidates = [getUserId(user), normalizeId(user?._id)].filter(Boolean);
+
+  return {
+    creatorId: {
+      $in: [...new Set(candidates)],
+    },
+  };
+};
+
+const isOwnerPromptRequest = (query) => {
+  const mine = String(query.mine || "").trim().toLowerCase();
+
+  return mine === "true" || Boolean(query.creatorId) || Boolean(query.creatorEmail);
+};
+
 const buildSortOption = (sort) => {
   switch (sort) {
     case "rating":
@@ -238,9 +257,7 @@ const canManagePrompt = (user, prompt) => {
     return false;
   }
 
-  return (
-    user.role === "admin" || normalizeId(user.id) === normalizeId(prompt.creatorId)
-  );
+  return user.role === "admin" || getUserId(user) === normalizeId(prompt.creatorId);
 };
 
 const buildLockedPromptResponse = (prompt) => {
@@ -259,7 +276,13 @@ const buildAdminPromptQuery = (query) => {
   const filters = {};
 
   if (query.status) {
-    filters.status = query.status;
+    const normalizedStatus = String(query.status || "").trim().toLowerCase();
+
+    if (normalizedStatus === "featured") {
+      filters.featured = true;
+    } else if (normalizedStatus !== "all" && PROMPT_STATUSES.includes(normalizedStatus)) {
+      filters.status = normalizedStatus;
+    }
   }
 
   if (query.featured !== undefined) {
@@ -299,7 +322,7 @@ const createPrompt = async (req, res) => {
 
     if (req.user.subscription === "free") {
       const promptCount = await promptsCollection.countDocuments({
-        creatorId: req.user.id,
+        ...buildCreatorIdFilter(req.user),
       });
 
       if (promptCount >= 3) {
@@ -313,6 +336,9 @@ const createPrompt = async (req, res) => {
     const prompt = createPromptDocument(payload, req.user);
 
     await promptsCollection.insertOne(prompt);
+    console.log(
+      `[prompt:create] id=${prompt._id} creatorId=${prompt.creatorId} status=${prompt.status}`
+    );
 
     return res.status(201).json({
       success: true,
@@ -328,7 +354,32 @@ const createPrompt = async (req, res) => {
 
 const getPrompts = async (req, res) => {
   try {
-    const filters = buildPublicPromptQuery(req.query);
+    const ownerPromptRequest = isOwnerPromptRequest(req.query);
+
+    if (ownerPromptRequest && !req.user) {
+      return res.status(401).json({
+        success: false,
+        message: "Unauthorized",
+      });
+    }
+
+    const filters = ownerPromptRequest
+      ? buildCreatorIdFilter(req.user)
+      : buildPublicPromptQuery(req.query);
+
+    if (ownerPromptRequest && req.query.status) {
+      const normalizedStatus = String(req.query.status || "").trim().toLowerCase();
+
+      if (!PROMPT_STATUSES.includes(normalizedStatus)) {
+        return res.status(400).json({
+          success: false,
+          message: "Invalid status",
+        });
+      }
+
+      filters.status = normalizedStatus;
+    }
+
     const { page, limit, skip } = getPagination(req.query);
     const sort = buildSortOption(req.query.sort);
 
@@ -489,8 +540,7 @@ const updatePrompt = async (req, res) => {
     }
 
     const isAdmin = req.user.role === "admin";
-    const isOwner =
-      normalizeId(req.user.id) === normalizeId(prompt.creatorId);
+    const isOwner = getUserId(req.user) === normalizeId(prompt.creatorId);
 
     if (!isAdmin && !isOwner) {
       return res.status(403).json({
@@ -639,8 +689,7 @@ const deletePrompt = async (req, res) => {
     }
 
     const isAdmin = req.user.role === "admin";
-    const isOwner =
-      normalizeId(req.user.id) === normalizeId(prompt.creatorId);
+    const isOwner = getUserId(req.user) === normalizeId(prompt.creatorId);
 
     if (!isAdmin && !isOwner) {
       return res.status(403).json({

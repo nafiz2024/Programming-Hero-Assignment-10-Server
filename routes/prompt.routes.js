@@ -20,7 +20,7 @@ import verifyRole from "../middleware/verifyRole.js";
 const router = express.Router();
 
 router.post("/", verifyAuth, createPrompt);
-router.get("/", getPrompts);
+router.get("/", verifyAuthOptional, getPrompts);
 router.get("/pending/all", verifyAuth, verifyRole("admin"), getPendingPrompts);
 router.get("/admin/all", verifyAuth, verifyRole("admin"), getAllPromptsForAdmin);
 router.patch("/:id/approve", verifyAuth, verifyRole("admin"), approvePrompt);
