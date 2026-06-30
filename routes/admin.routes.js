@@ -6,15 +6,16 @@ import {
   getRecentActivity,
   getRevenue,
 } from "../controllers/admin.controller.js";
-import verifyAuth from "../middleware/verifyAuth.js";
-import verifyRole from "../middleware/verifyRole.js";
+import { getAllPromptsForAdmin } from "../controllers/prompt.controller.js";
+import verifyAdminSession from "../middleware/verifyAdminSession.js";
 
 const router = express.Router();
 
-router.use(verifyAuth, verifyRole("admin"));
+router.use(verifyAdminSession);
 
 router.get("/stats", getAdminStats);
 router.get("/payments", getAdminPayments);
+router.get("/prompts", getAllPromptsForAdmin);
 router.get("/revenue", getRevenue);
 router.get("/recent-activity", getRecentActivity);
 
