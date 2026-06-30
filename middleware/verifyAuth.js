@@ -1,3 +1,6 @@
+import { ObjectId } from "mongodb";
+
+import { auth } from "../config/auth.js";
 import { client } from "../config/db.js";
 import { getUserId, normalizeId } from "../utils/identity.js";
 
@@ -18,7 +21,88 @@ const parseCookies = (cookieHeader = "") => {
   }, {});
 };
 
+const buildUserIdQuery = (id) => {
+  const normalized = normalizeId(id);
+  const candidates = [normalized].filter(Boolean);
+
+  if (ObjectId.isValid(normalized)) {
+    candidates.push(new ObjectId(normalized));
+  }
+
+  return {
+    _id: {
+      $in: [...new Set(candidates)],
+    },
+  };
+};
+
+const normalizeAuthResult = (session, user) => {
+  if (!session || !user) {
+    return null;
+  }
+
+  return {
+    session: {
+      ...session,
+      id: normalizeId(session._id || session.id),
+    },
+    user: {
+      ...user,
+      id: getUserId(user),
+      _id: normalizeId(user._id || user.id),
+    },
+  };
+};
+
+const findUserForSession = async (sessionUser) => {
+  const userId = normalizeId(sessionUser?._id || sessionUser?.id);
+
+  if (userId) {
+    const matchedUser = await client
+      .db()
+      .collection("user")
+      .findOne(buildUserIdQuery(userId));
+
+    if (matchedUser) {
+      return matchedUser;
+    }
+  }
+
+  const email = String(sessionUser?.email || "").trim().toLowerCase();
+
+  if (!email) {
+    return null;
+  }
+
+  return client.db().collection("user").findOne({
+    email: {
+      $regex: `^${email.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}$`,
+      $options: "i",
+    },
+  });
+};
+
+const authenticateViaBetterAuth = async (req) => {
+  const sessionPayload = await auth.api.getSession({
+    headers: new Headers(req.headers),
+  });
+
+  if (!sessionPayload?.session || !sessionPayload?.user) {
+    return null;
+  }
+
+  const dbUser = await findUserForSession(sessionPayload.user);
+
+  return normalizeAuthResult(sessionPayload.session, dbUser || sessionPayload.user);
+};
+
 const authenticateRequest = async (req) => {
+  const betterAuthSession = await authenticateViaBetterAuth(req);
+
+  if (betterAuthSession) {
+    return betterAuthSession;
+  }
+
   const cookies = parseCookies(req.headers.cookie);
   const signedSessionToken = SESSION_COOKIE_NAMES.map((name) => cookies[name]).find(Boolean);
 
@@ -44,17 +128,7 @@ const authenticateRequest = async (req) => {
     return null;
   }
 
-  return {
-    session: {
-      ...session,
-      id: normalizeId(session._id),
-    },
-    user: {
-      ...user,
-      id: getUserId(user),
-      _id: normalizeId(user._id),
-    },
-  };
+  return normalizeAuthResult(session, user);
 };
 
 const verifyAuth = async (req, res, next) => {
