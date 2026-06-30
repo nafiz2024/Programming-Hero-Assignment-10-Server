@@ -185,6 +185,41 @@ const buildCreatorIdFilter = (user) => {
   };
 };
 
+const buildMyPromptsQuery = (user) => {
+  const creatorIdCandidates = [getUserId(user), normalizeId(user?._id)].filter(Boolean);
+  const creatorEmail = String(user?.email || "").trim().toLowerCase();
+  const orFilters = [];
+
+  if (creatorIdCandidates.length > 0) {
+    orFilters.push({
+      creatorId: {
+        $in: [...new Set(creatorIdCandidates)],
+      },
+    });
+  }
+
+  if (creatorEmail) {
+    orFilters.push({
+      creatorEmail: {
+        $regex: `^${creatorEmail.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}$`,
+        $options: "i",
+      },
+    });
+  }
+
+  if (!orFilters.length) {
+    return {
+      _id: {
+        $in: [],
+      },
+    };
+  }
+
+  return {
+    $or: orFilters,
+  };
+};
+
 const isOwnerPromptRequest = (query) => {
   const mine = String(query.mine || "").trim().toLowerCase();
 
@@ -364,7 +399,7 @@ const getPrompts = async (req, res) => {
     }
 
     const filters = ownerPromptRequest
-      ? buildCreatorIdFilter(req.user)
+      ? buildMyPromptsQuery(req.user)
       : buildPublicPromptQuery(req.query);
 
     if (ownerPromptRequest && req.query.status) {
@@ -402,6 +437,48 @@ const getPrompts = async (req, res) => {
     return res.status(500).json({
       success: false,
       message: "Failed to fetch prompts",
+    });
+  }
+};
+
+const getMyPrompts = async (req, res) => {
+  try {
+    const { page, limit, skip } = getPagination(req.query);
+    const sort = buildSortOption(req.query.sort);
+    const filters = buildMyPromptsQuery(req.user);
+
+    if (req.query.status) {
+      const normalizedStatus = String(req.query.status || "").trim().toLowerCase();
+
+      if (!PROMPT_STATUSES.includes(normalizedStatus)) {
+        return res.status(400).json({
+          success: false,
+          message: "Invalid status",
+        });
+      }
+
+      filters.status = normalizedStatus;
+    }
+
+    const [prompts, total] = await Promise.all([
+      promptsCollection.find(filters).sort(sort).skip(skip).limit(limit).toArray(),
+      promptsCollection.countDocuments(filters),
+    ]);
+
+    return res.status(200).json({
+      success: true,
+      prompts: prompts.map(normalizePromptDocument),
+      pagination: {
+        page,
+        limit,
+        total,
+        totalPages: Math.ceil(total / limit),
+      },
+    });
+  } catch (error) {
+    return res.status(500).json({
+      success: false,
+      message: "Failed to fetch my prompts",
     });
   }
 };
@@ -913,6 +990,7 @@ export {
   deletePrompt,
   featurePrompt,
   getAllPromptsForAdmin,
+  getMyPrompts,
   getPromptById,
   getPendingPrompts,
   getPrompts,
