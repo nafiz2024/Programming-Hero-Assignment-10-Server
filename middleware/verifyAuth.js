@@ -7,7 +7,10 @@ import { getUserId, normalizeId } from "../utils/identity.js";
 const SESSION_COOKIE_NAMES = [
   "__Secure-better-auth.session_token",
   "better-auth.session_token",
+  "__Secure-better-auth-session_token",
+  "better-auth-session_token",
 ];
+
 const parseCookies = (cookieHeader = "") => {
   return cookieHeader.split(";").reduce((cookies, cookie) => {
     const [name, ...valueParts] = cookie.trim().split("=");
@@ -19,6 +22,24 @@ const parseCookies = (cookieHeader = "") => {
     cookies[name] = valueParts.join("=");
     return cookies;
   }, {});
+};
+
+const getCookieValue = (cookies, cookieNames) => {
+  for (const cookieName of cookieNames) {
+    if (cookies[cookieName]) {
+      return cookies[cookieName];
+    }
+
+    const chunkedCookieEntries = Object.entries(cookies)
+      .filter(([name]) => name.startsWith(`${cookieName}.`))
+      .sort(([left], [right]) => left.localeCompare(right, undefined, { numeric: true }));
+
+    if (chunkedCookieEntries.length) {
+      return chunkedCookieEntries.map(([, value]) => value).join("");
+    }
+  }
+
+  return null;
 };
 
 const buildUserIdQuery = (id) => {
@@ -54,8 +75,11 @@ const normalizeAuthResult = (session, user) => {
   };
 };
 
-const findUserForSession = async (sessionUser) => {
-  const userId = normalizeId(sessionUser?._id || sessionUser?.id);
+const findUserForSession = async ({ session, user }) => {
+  const sessionUser = user || {};
+  const userId = normalizeId(
+    sessionUser?._id || sessionUser?.id || sessionUser?.userId || session?.userId
+  );
 
   if (userId) {
     const matchedUser = await client
@@ -83,17 +107,29 @@ const findUserForSession = async (sessionUser) => {
 };
 
 const authenticateViaBetterAuth = async (req) => {
-  const sessionPayload = await auth.api.getSession({
-    headers: new Headers(req.headers),
-  });
+  let sessionPayload = null;
+
+  try {
+    sessionPayload = await auth.api.getSession({
+      headers: new Headers(req.headers),
+    });
+  } catch (error) {
+    return null;
+  }
 
   if (!sessionPayload?.session || !sessionPayload?.user) {
     return null;
   }
 
-  const dbUser = await findUserForSession(sessionPayload.user);
+  const dbUser = await findUserForSession({
+    session: sessionPayload.session,
+    user: sessionPayload.user,
+  });
 
-  return normalizeAuthResult(sessionPayload.session, dbUser || sessionPayload.user);
+  return normalizeAuthResult(sessionPayload.session, {
+    ...sessionPayload.user,
+    ...(dbUser || {}),
+  });
 };
 
 const authenticateRequest = async (req) => {
@@ -104,7 +140,7 @@ const authenticateRequest = async (req) => {
   }
 
   const cookies = parseCookies(req.headers.cookie);
-  const signedSessionToken = SESSION_COOKIE_NAMES.map((name) => cookies[name]).find(Boolean);
+  const signedSessionToken = getCookieValue(cookies, SESSION_COOKIE_NAMES);
 
   if (!signedSessionToken) {
     return null;
@@ -120,8 +156,12 @@ const authenticateRequest = async (req) => {
     return null;
   }
 
-  const user = await client.db().collection("user").findOne({
-    _id: session.userId,
+  const user = await findUserForSession({
+    session,
+    user: {
+      id: session.userId,
+      _id: session.userId,
+    },
   });
 
   if (!user) {
