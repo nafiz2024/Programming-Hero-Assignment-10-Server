@@ -3,8 +3,8 @@ import { ObjectId } from "mongodb";
 
 import { client } from "../config/db.js";
 import { loadAuthenticatedRequest } from "../middleware/verifyAuth.js";
-import verifyAuth from "../middleware/verifyAuth.js";
-import verifyRole, { ALLOWED_ROLES } from "../middleware/verifyRole.js";
+import verifyAdminSession from "../middleware/verifyAdminSession.js";
+import { ALLOWED_ROLES } from "../middleware/verifyRole.js";
 
 const router = express.Router();
 const usersCollection = client.db().collection("user");
@@ -67,7 +67,7 @@ router.get("/me", async (req, res) => {
   }
 });
 
-router.get("/", verifyAuth, verifyRole("admin"), async (req, res) => {
+router.get("/", verifyAdminSession, async (req, res) => {
   try {
     const users = await usersCollection
       .find(
@@ -92,7 +92,7 @@ router.get("/", verifyAuth, verifyRole("admin"), async (req, res) => {
   }
 });
 
-router.patch("/:id/role", verifyAuth, verifyRole("admin"), async (req, res) => {
+router.patch("/:id/role", verifyAdminSession, async (req, res) => {
   try {
     const { role } = req.body;
 
@@ -141,7 +141,7 @@ router.patch("/:id/role", verifyAuth, verifyRole("admin"), async (req, res) => {
   }
 });
 
-router.delete("/:id", verifyAuth, verifyRole("admin"), async (req, res) => {
+router.delete("/:id", verifyAdminSession, async (req, res) => {
   try {
     const result = await usersCollection.deleteOne(buildUserIdQuery(req.params.id));
 
