@@ -6,7 +6,7 @@ const bookmarksCollection = client.db().collection("bookmark");
 
 const createBookmarkDocument = (userId, promptId) => {
   return {
-    _id: new ObjectId().toHexString(),
+    _id: new ObjectId().toHexString(),  
     userId,
     promptId,
     createdAt: new Date(),
